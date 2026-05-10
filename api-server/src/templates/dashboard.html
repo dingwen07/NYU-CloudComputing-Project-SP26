@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - IAN Knowledge Management{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="page-subtitle">Submit IPFS content, track processing, and jump into review or published files.</p>
+    </div>
+    <div class="header-actions">
+        <a class="btn btn-secondary" href="/review">Review Queue</a>
+        <a class="btn btn-primary" href="/library">Open Library</a>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-number">{{ total_jobs }}</div>
+        <div class="stat-label">Total Jobs</div>
+    </div>
+    <div class="stat-card warning">
+        <div class="stat-number">{{ pending_review }}</div>
+        <div class="stat-label">Pending Review</div>
+    </div>
+    <div class="stat-card success">
+        <div class="stat-number">{{ published }}</div>
+        <div class="stat-label">Published</div>
+    </div>
+</div>
+
+<section class="panel">
+<div class="section-header">
+    <h2>Submit New CID</h2>
+    <span class="muted">The LLM can suggest a better title during review.</span>
+</div>
+<form id="submit-form" class="submit-form inline-form">
+    <div class="form-group">
+        <label for="cid">IPFS CID</label>
+        <input type="text" id="cid" name="cid" placeholder="Qm... or bafy..." required>
+    </div>
+    <div class="form-group">
+        <label for="title">Title (optional)</label>
+        <input type="text" id="title" name="title" placeholder="Document title">
+    </div>
+    <button type="submit" class="btn btn-primary">Submit for Processing</button>
+</form>
+<div id="submit-result" class="result-msg" style="display:none;"></div>
+</section>
+
+<div class="section-header">
+    <h2>Recent Jobs</h2>
+    <span class="muted">Files open through the public IPFS gateway.</span>
+</div>
+<table class="jobs-table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>CID</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Submitted</th>
+            <th>Download</th>
+            <th>Review</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for job in recent_jobs %}
+        <tr>
+            <td><a href="/api/jobs/{{ job.id }}">{{ job.id[:8] }}...</a></td>
+            <td title="{{ job.cid }}"><code>{{ job.cid[:12] }}...</code></td>
+            <td class="title-cell">{{ job.title or (job.ai_metadata.suggested_title if job.ai_metadata and job.ai_metadata.suggested_title else '-') }}</td>
+            <td><span class="status-badge status-{{ job.status.value|lower }}">{{ job.status.value }}</span></td>
+            <td>{{ job.submitted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td><a class="table-link" href="https://ipfs.io/ipfs/{{ job.cid }}" target="_blank" rel="noopener">Download</a></td>
+            <td>
+                {% if job.status.value == 'PENDING_REVIEW' %}
+                <a class="table-link" href="/api/review/{{ job.id }}">Approve</a>
+                {% else %}
+                <span class="muted">-</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<script>
+document.getElementById('submit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cid = document.getElementById('cid').value;
+    const title = document.getElementById('title').value;
+    const resultDiv = document.getElementById('submit-result');
+
+    try {
+        const resp = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cid, title})
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            resultDiv.textContent = `Job created: ${data.id}`;
+            resultDiv.className = 'result-msg success';
+            resultDiv.style.display = 'block';
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            resultDiv.textContent = `Error: ${JSON.stringify(data)}`;
+            resultDiv.className = 'result-msg error';
+            resultDiv.style.display = 'block';
+        }
+    } catch (err) {
+        resultDiv.textContent = `Error: ${err.message}`;
+        resultDiv.className = 'result-msg error';
+        resultDiv.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

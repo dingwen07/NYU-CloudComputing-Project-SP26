@@ -1,0 +1,26 @@
+runtime: custom
+env: flex
+
+automatic_scaling:
+  min_num_instances: 1
+  max_num_instances: 3
+  cpu_utilization:
+    target_utilization: 0.65
+
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+
+env_variables:
+  GCP_PROJECT_ID: "nyu-cloud-computing-project"
+  IPFS_API_URL: ""
+  IPFS_GATEWAY_URL: "https://ipfs.io/ipfs/"
+  IPNS_LIBRARY_NAME: "knowledge-library-v2"
+  AZURE_OPENAI_ENDPOINT: ""
+  AZURE_OPENAI_KEY: ""
+  AZURE_OPENAI_DEPLOYMENT: "gpt-5.4-mini"
+  P2P_NODE_ID: "api-server"
+  P2P_PORT: "9000"
+  P2P_REGISTER_ENABLED: "false"
+  POLL_INTERVAL_SECONDS: "10"

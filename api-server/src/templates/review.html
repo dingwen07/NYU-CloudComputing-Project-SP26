@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Review - IAN Knowledge Management{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Review</h1>
+        <p class="page-subtitle">Approve processed documents and edit AI-generated metadata before publishing.</p>
+    </div>
+    <div class="header-actions">
+        <a class="btn btn-secondary" href="/">Jobs</a>
+        <a class="btn btn-primary" href="/library">Library</a>
+    </div>
+</div>
+
+<div id="review-summary" class="stats-grid"></div>
+<div id="review-list" class="review-grid"></div>
+<div id="review-result" class="result-msg" style="display:none;"></div>
+
+<script>
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function shortCid(cid) {
+    return cid ? `${cid.slice(0, 10)}...${cid.slice(-6)}` : '';
+}
+
+function titleFor(job) {
+    return job.title || job.ai_metadata?.suggested_title || 'Untitled';
+}
+
+async function approveJob(jobId, button) {
+    button.disabled = true;
+    button.textContent = 'Approving...';
+    const resultDiv = document.getElementById('review-result');
+
+    try {
+        const resp = await fetch(`/api/review/${jobId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'approve', reviewer_notes: 'Approved from review queue.'})
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(JSON.stringify(data));
+        resultDiv.textContent = `Approved ${jobId}`;
+        resultDiv.className = 'result-msg success';
+        resultDiv.style.display = 'block';
+        await loadReviews();
+    } catch (err) {
+        button.disabled = false;
+        button.textContent = 'Approve';
+        resultDiv.textContent = `Error: ${err.message}`;
+        resultDiv.className = 'result-msg error';
+        resultDiv.style.display = 'block';
+    }
+}
+
+async function loadReviews() {
+    const resp = await fetch('/api/review/pending');
+    const jobs = await resp.json();
+    const summary = document.getElementById('review-summary');
+    const container = document.getElementById('review-list');
+
+    summary.innerHTML = `
+        <div class="stat-card warning">
+            <div class="stat-number">${jobs.length}</div>
+            <div class="stat-label">Pending Review</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">${jobs.filter(j => j.ai_metadata).length}</div>
+            <div class="stat-label">With AI Metadata</div>
+        </div>
+    `;
+
+    if (jobs.length === 0) {
+        container.innerHTML = '<p class="empty-state">No jobs pending review.</p>';
+        return;
+    }
+
+    container.innerHTML = jobs.map(job => `
+        <article class="review-card">
+            <div class="review-header">
+                <div>
+                    <h2>${escapeHtml(titleFor(job))}</h2>
+                    <p class="muted">${new Date(job.submitted_at).toLocaleString()}</p>
+                </div>
+                <span class="status-badge status-pending_review">Pending</span>
+            </div>
+            <div class="cid-line">
+                <code title="${escapeHtml(job.cid)}">${escapeHtml(shortCid(job.cid))}</code>
+                <a class="table-link" href="https://ipfs.io/ipfs/${job.cid}" target="_blank" rel="noopener">Download</a>
+            </div>
+            ${job.ai_metadata ? `
+                <div class="ai-metadata">
+                    <p>${escapeHtml(job.ai_metadata.summary)}</p>
+                    <div class="tag-row">${(job.ai_metadata.tags || []).slice(0, 8).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('')}</div>
+                </div>
+            ` : '<p class="muted">No AI metadata yet.</p>'}
+            <div class="card-actions">
+                <a href="/api/review/${job.id}" class="btn btn-secondary">Edit</a>
+                <button class="btn btn-success" onclick="approveJob('${job.id}', this)">Approve</button>
+            </div>
+        </article>
+    `).join('');
+}
+loadReviews();
+</script>
+{% endblock %}
