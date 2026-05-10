@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GCP credentials
+service-account*.json
+*-credentials.json
+
+# Docker
+docker-compose.override.yml
+
+# IPFS data
+ipfs_data/
+
+# Deploy staging
+.deploy-staging/
+
+service-account.json

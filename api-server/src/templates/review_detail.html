@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Review: {{ job.title or job.cid[:16] }} - IAN Knowledge Management{% endblock %}
+
+{% block content %}
+<h1>Review Job</h1>
+
+<div class="review-detail">
+    <div class="detail-section">
+        <h2>Job Information</h2>
+        <p><strong>ID:</strong> {{ job.id }}</p>
+        <p><strong>CID:</strong> <code>{{ job.cid }}</code></p>
+        <p><strong>Title:</strong> {{ job.title or 'Untitled' }}</p>
+        <p><strong>Status:</strong> <span class="status-badge status-{{ job.status.value|lower }}">{{ job.status.value }}</span></p>
+        <p><strong>Submitted:</strong> {{ job.submitted_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</p>
+    </div>
+
+    {% if job.ai_metadata %}
+    <div class="detail-section">
+        <h2>AI-Generated Metadata</h2>
+        <form id="review-form">
+            <div class="form-group">
+                <label for="title">Approved Title</label>
+                <input type="text" id="title" name="title" value="{{ job.ai_metadata.suggested_title or job.title }}">
+            </div>
+            <div class="form-group">
+                <label for="summary">Summary</label>
+                <textarea id="summary" name="summary" rows="3">{{ job.ai_metadata.summary }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="category">Category</label>
+                <select id="category" name="category">
+                    {% for cat in ['research', 'tutorial', 'reference', 'opinion', 'dataset', 'code', 'other'] %}
+                    <option value="{{ cat }}" {% if job.ai_metadata.category == cat %}selected{% endif %}>{{ cat|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="tags">Tags (comma-separated)</label>
+                <input type="text" id="tags" name="tags" value="{{ job.ai_metadata.tags|join(', ') }}">
+            </div>
+            <div class="form-group">
+                <label>Key Concepts</label>
+                <p>{{ job.ai_metadata.key_concepts|join(', ') }}</p>
+            </div>
+            <div class="form-group">
+                <label for="reviewer_notes">Reviewer Notes</label>
+                <textarea id="reviewer_notes" name="reviewer_notes" rows="2" placeholder="Optional notes..."></textarea>
+            </div>
+            <div class="review-actions">
+                <button type="button" class="btn btn-success" onclick="submitReview('approve')">Approve</button>
+                <button type="button" class="btn btn-danger" onclick="submitReview('reject')">Reject</button>
+            </div>
+        </form>
+    </div>
+    {% else %}
+    <div class="detail-section">
+        <p class="empty-state">No AI metadata available for this job.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div id="review-result" class="result-msg" style="display:none;"></div>
+
+<script>
+async function submitReview(action) {
+    const resultDiv = document.getElementById('review-result');
+    const body = {
+        action: action,
+        reviewer_notes: document.getElementById('reviewer_notes')?.value || '',
+    };
+
+    if (action === 'approve') {
+        const title = document.getElementById('title')?.value;
+        const summary = document.getElementById('summary')?.value;
+        const category = document.getElementById('category')?.value;
+        const tagsStr = document.getElementById('tags')?.value || '';
+        const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t);
+
+        if (title) {
+            body.title = title;
+            body.suggested_title = title;
+        }
+        if (summary) body.summary = summary;
+        if (category) body.category = category;
+        if (tags.length) body.tags = tags;
+    }
+
+    try {
+        const resp = await fetch('/api/review/{{ job.id }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            resultDiv.textContent = `Job ${action}d successfully!`;
+            resultDiv.className = 'result-msg success';
+            resultDiv.style.display = 'block';
+            setTimeout(() => window.location.href = '/', 1500);
+        } else {
+            resultDiv.textContent = `Error: ${JSON.stringify(data)}`;
+            resultDiv.className = 'result-msg error';
+            resultDiv.style.display = 'block';
+        }
+    } catch (err) {
+        resultDiv.textContent = `Error: ${err.message}`;
+        resultDiv.className = 'result-msg error';
+        resultDiv.style.display = 'block';
+    }
+}
+</script>
+{% endblock %}

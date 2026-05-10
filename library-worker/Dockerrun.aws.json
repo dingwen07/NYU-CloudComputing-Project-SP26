@@ -1,0 +1,14 @@
+{
+  "AWSEBDockerrunVersion": "1",
+  "Image": {
+    "Name": "<AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/ian-library-worker:latest",
+    "Update": "true"
+  },
+  "Ports": [
+    {
+      "ContainerPort": 8003,
+      "HostPort": 80
+    }
+  ],
+  "Logging": "/var/log/library-worker"
+}

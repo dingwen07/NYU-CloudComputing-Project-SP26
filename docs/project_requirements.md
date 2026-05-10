@@ -1,4 +1,4 @@
-Cloud-Based Active (Intelligent Autonomous Networked) Application: 
+# Cloud-Based Active (Intelligent Autonomous Networked) Application
 
 This part of the project focuses on the design and implementation of cloud application framework that operates on a P2P/Decentralized network (e.g., Hybrid Web2/Web 3 dApp supportive network). The project also includes the design and implementation of a cloud-centric semi-independent (i.e., combined with human-in-the-loop capabilities)  IAN application. Project proposals will be reviewed in class. 
 
@@ -10,11 +10,7 @@ your project based on the architecture of your future state solution.
 2. You will need to mix the use of PaaS services provided by at least three cloud 
 platforms. 
 
-3. Review and get familiar with applicable PaaS services provided by mainstream cloud platforms (as per item 2 above, pick at least three big Clouds and explain 
-
-3 
-
-your choice). You will need to use at least three PaaS services from different cloud as part of your solution. 
+3. Review and get familiar with applicable PaaS services provided by mainstream cloud platforms (as per item 2 above, pick at least three big Clouds and explain your choice). You will need to use at least three PaaS services from different cloud as part of your solution. 
 
 4. Your solution will need to operate on a P2P/decentralized network 
 infrastructure; 

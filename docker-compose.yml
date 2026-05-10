@@ -1,0 +1,72 @@
+services:
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: >
+      gcloud emulators firestore start
+      --host-port=0.0.0.0:8181
+      --project=ian-knowledge-mgmt
+    ports:
+      - "8181:8181"
+
+  api-server:
+    build:
+      context: .
+      dockerfile: api-server/Dockerfile
+      args:
+        SERVICE_DIR: api-server
+    ports:
+      - "8000:8080"
+    env_file: .env
+    environment:
+      FIRESTORE_EMULATOR_HOST: firestore-emulator:8181
+      IPFS_API_URL: ""
+      IPFS_GATEWAY_URL: https://ipfs.io/ipfs/
+    depends_on:
+      - firestore-emulator
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
+      args:
+        SERVICE_DIR: orchestrator
+    ports:
+      - "8001:8080"
+    env_file: .env
+    environment:
+      FIRESTORE_EMULATOR_HOST: firestore-emulator:8181
+      IPFS_API_URL: ""
+    depends_on:
+      - firestore-emulator
+
+  llm-worker:
+    build:
+      context: .
+      dockerfile: llm-worker/Dockerfile
+      args:
+        SERVICE_DIR: llm-worker
+    ports:
+      - "8002:8080"
+      - "4012:4001"
+    env_file: .env
+    environment:
+      FIRESTORE_EMULATOR_HOST: firestore-emulator:8181
+      IPFS_API_URL: http://127.0.0.1:5001/api/v0
+    depends_on:
+      - firestore-emulator
+
+  library-worker:
+    build:
+      context: .
+      dockerfile: library-worker/Dockerfile
+      args:
+        SERVICE_DIR: library-worker
+    ports:
+      - "8003:8080"
+      - "4013:4001"
+    env_file: .env
+    environment:
+      FIRESTORE_EMULATOR_HOST: firestore-emulator:8181
+      IPFS_API_URL: http://127.0.0.1:5001/api/v0
+    depends_on:
+      - firestore-emulator

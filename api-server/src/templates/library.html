@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Library - IAN Knowledge Management{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Library</h1>
+        <p class="page-subtitle">Published content indexed by CID, tag, and IPNS.</p>
+    </div>
+    <div class="header-actions">
+        <a id="index-link" class="btn btn-secondary" target="_blank" rel="noopener">Index JSON</a>
+        <a id="ipns-link" class="btn btn-primary" target="_blank" rel="noopener">IPNS</a>
+    </div>
+</div>
+
+<div id="library-info" class="stats-grid"></div>
+
+<section class="toolbar">
+    <div class="search-box">
+        <label for="library-search">Search</label>
+        <input id="library-search" type="search" placeholder="Title, summary, CID, tag">
+    </div>
+    <div class="search-box">
+        <label for="tag-filter">Tag</label>
+        <select id="tag-filter">
+            <option value="">All tags</option>
+        </select>
+    </div>
+    <div class="search-box">
+        <label for="category-filter">Category</label>
+        <select id="category-filter">
+            <option value="">All categories</option>
+        </select>
+    </div>
+</section>
+
+<div id="library-entries" class="library-grid"></div>
+
+<script>
+let libraryEntries = [];
+let tagIndex = {};
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function shortCid(cid) {
+    return cid ? `${cid.slice(0, 10)}...${cid.slice(-6)}` : '';
+}
+
+function renderStats(data) {
+    document.getElementById('library-info').innerHTML = `
+        <div class="stat-card">
+            <div class="stat-number">${data.total_entries}</div>
+            <div class="stat-label">Entries</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">${Object.keys(data.tag_index || {}).length}</div>
+            <div class="stat-label">Tags</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">v${data.version}</div>
+            <div class="stat-label">Library Version</div>
+        </div>
+    `;
+
+    const indexLink = document.getElementById('index-link');
+    const ipnsLink = document.getElementById('ipns-link');
+    indexLink.href = `https://ipfs.io/ipfs/${data.index_cid}`;
+    indexLink.title = data.index_cid || '';
+    ipnsLink.href = `https://ipfs.io/ipns/${data.ipns_name}`;
+    ipnsLink.title = data.ipns_name || '';
+}
+
+function renderTagFilter() {
+    const select = document.getElementById('tag-filter');
+    const tags = Object.entries(tagIndex).sort((a, b) => b[1].length - a[1].length);
+    select.innerHTML = '<option value="">All tags</option>' + tags.map(([tag, cids]) =>
+        `<option value="${escapeHtml(tag)}">${escapeHtml(tag)} (${cids.length})</option>`
+    ).join('');
+}
+
+function renderCategoryFilter() {
+    const select = document.getElementById('category-filter');
+    const categories = [...new Set(libraryEntries.map(entry => entry.category || 'other'))].sort();
+    select.innerHTML = '<option value="">All categories</option>' + categories.map(category =>
+        `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`
+    ).join('');
+}
+
+function renderEntries() {
+    const query = document.getElementById('library-search').value.trim().toLowerCase();
+    const tag = document.getElementById('tag-filter').value;
+    const category = document.getElementById('category-filter').value;
+    const container = document.getElementById('library-entries');
+
+    let entries = libraryEntries;
+    if (tag) {
+        const allowed = new Set(tagIndex[tag] || []);
+        entries = entries.filter(entry => allowed.has(entry.cid));
+    }
+    if (category) {
+        entries = entries.filter(entry => (entry.category || 'other') === category);
+    }
+    if (query) {
+        entries = entries.filter(entry => [
+            entry.cid,
+            entry.title,
+            entry.summary,
+            entry.category,
+            ...(entry.tags || [])
+        ].join(' ').toLowerCase().includes(query));
+    }
+
+    if (entries.length === 0) {
+        container.innerHTML = '<p class="empty-state">No matching library entries.</p>';
+        return;
+    }
+
+    container.innerHTML = entries.map(entry => `
+        <article class="library-card">
+            <div class="card-topline">
+                <span class="category-pill">${escapeHtml(entry.category || 'other')}</span>
+                <code title="${escapeHtml(entry.cid)}">${escapeHtml(shortCid(entry.cid))}</code>
+            </div>
+            <h2>${escapeHtml(entry.title)}</h2>
+            <p>${escapeHtml(entry.summary)}</p>
+            <div class="tag-row">${(entry.tags || []).slice(0, 8).map(t => `<button class="tag tag-button" data-tag="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join('')}</div>
+            <div class="card-actions">
+                <a class="btn btn-primary" href="${entry.ipfs_url}" target="_blank" rel="noopener">Download</a>
+                <a class="btn btn-secondary" href="https://ipfs.io/ipfs/${entry.metadata_cid}" target="_blank" rel="noopener">Metadata</a>
+            </div>
+        </article>
+    `).join('');
+
+    container.querySelectorAll('[data-tag]').forEach(button => {
+        button.addEventListener('click', () => {
+            document.getElementById('tag-filter').value = button.dataset.tag;
+            renderEntries();
+        });
+    });
+}
+
+async function loadLibrary() {
+    const resp = await fetch('/api/library');
+    const data = await resp.json();
+    libraryEntries = Object.values(data.entries || {}).sort((a, b) => new Date(b.added_at) - new Date(a.added_at));
+    tagIndex = data.tag_index || {};
+    renderStats(data);
+    renderTagFilter();
+    renderCategoryFilter();
+    renderEntries();
+}
+
+document.getElementById('library-search').addEventListener('input', renderEntries);
+document.getElementById('tag-filter').addEventListener('change', renderEntries);
+document.getElementById('category-filter').addEventListener('change', renderEntries);
+loadLibrary();
+</script>
+{% endblock %}
