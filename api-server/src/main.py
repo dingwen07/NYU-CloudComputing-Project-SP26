@@ -1,6 +1,7 @@
 import sys
 import logging
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 # Add common package to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common"))
@@ -8,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "common"))
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from common import p2p
 
 from .routers import jobs, review, library
 
@@ -15,9 +17,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api-server")
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    p2p.start_node("api-server")
+    logger.info("API Server libp2p node started")
+    yield
+    p2p.stop_node()
+    logger.info("API Server libp2p node stopped")
+
+
 app = FastAPI(
     title="IAN Knowledge Management - API Server",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 templates_dir = Path(__file__).parent / "templates"
@@ -33,7 +45,7 @@ app.include_router(library.router, prefix="/api")
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "service": "api-server"}
+    return {"status": "healthy", "service": "api-server", "p2p": p2p.status()}
 
 
 @app.get("/")

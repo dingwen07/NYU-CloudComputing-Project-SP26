@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from common import db
 from common.enums import JobStatus
 from common.models import AiMetadata
+from common import p2p
 
 router = APIRouter(tags=["review"])
 
@@ -90,4 +91,8 @@ async def submit_review(job_id: str, review: ReviewAction):
         raise HTTPException(400, f"Invalid action: {review.action}")
 
     db.update_job(job_id, updates)
+    if updates["status"] == JobStatus.APPROVED.value:
+        p2p.publish("job.approved", job_id=job.id, cid=job.cid)
+    elif updates["status"] == JobStatus.REJECTED.value:
+        p2p.publish("job.rejected", job_id=job.id, cid=job.cid)
     return {"id": job_id, "status": updates["status"]}

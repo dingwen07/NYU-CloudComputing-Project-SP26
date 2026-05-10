@@ -116,9 +116,12 @@ deploy_azure() {
     # Get ACR credentials
     local acr_password
     acr_password=$(az acr credential show --name "$AZURE_ACR" --query "passwords[0].value" -o tsv)
+    local azure_location azure_dns_name
+    azure_location=$(az group show --name "$AZURE_RG" --query location -o tsv)
+    azure_dns_name="$AZURE_LLM_CONTAINER.$azure_location.azurecontainer.io"
 
     # Delete existing container if it exists
-    az container delete --resource-group "$AZURE_RG" --name "$AZURE_LLM_CONTAINER" --yes 2>/dev/null || true
+    az container delete --resource-group "$AZURE_RG" --name "$AZURE_LLM_CONTAINER" --yes >/dev/null 2>&1 || true
 
     # Create Container Instance
     log "Creating Container Instance: $AZURE_LLM_CONTAINER"
@@ -131,19 +134,25 @@ deploy_azure() {
         --registry-password "$acr_password" \
         --cpu 1 \
         --memory 2.0 \
-        --ports 8080 4001 \
+        --ports 8080 4001 9000 \
         --ip-address Public \
+        --dns-name-label "$AZURE_LLM_CONTAINER" \
         --os-type Linux \
         --environment-variables \
             GCP_PROJECT_ID="$GCP_PROJECT" \
             GOOGLE_APPLICATION_CREDENTIALS="/app/service-account.json" \
             AZURE_OPENAI_ENDPOINT="$aoai_endpoint" \
-            AZURE_OPENAI_KEY="$aoai_key" \
             AZURE_OPENAI_DEPLOYMENT="$aoai_deployment" \
             AZURE_OPENAI_API_VERSION="2024-12-01-preview" \
             IPFS_API_URL="http://127.0.0.1:5001/api/v0" \
             IPFS_GATEWAY_URL="https://ipfs.io/ipfs/" \
-            POLL_INTERVAL_SECONDS="10"
+            P2P_NODE_ID="llm-worker" \
+            P2P_PORT="9000" \
+            P2P_ADVERTISE_HOST="$azure_dns_name" \
+            POLL_INTERVAL_SECONDS="10" \
+        --secure-environment-variables \
+            AZURE_OPENAI_KEY="$aoai_key" \
+        > /dev/null
 
     local ip
     ip=$(az container show --resource-group "$AZURE_RG" --name "$AZURE_LLM_CONTAINER" --query 'ipAddress.ip' -o tsv)
@@ -214,6 +223,7 @@ deploy_aws() {
         AWS_SG=$(aws ec2 create-security-group --group-name ian-ecs-sg --description "IAN ECS services" --vpc-id "$vpc_id" --region "$AWS_REGION" --query 'GroupId' --output text)
     fi
     authorize_sg_ingress "$AWS_SG" tcp 8080 0.0.0.0/0
+    authorize_sg_ingress "$AWS_SG" tcp 9000 0.0.0.0/0
     authorize_sg_ingress "$AWS_SG" tcp 4001 0.0.0.0/0
     authorize_sg_ingress "$AWS_SG" udp 4001 0.0.0.0/0
     ok "Security Group: $AWS_SG"
@@ -231,11 +241,15 @@ deploy_aws() {
 
 _deploy_ecs() {
     local name=$1 image=$2 cpu=$3 memory=$4 subnets=$5 ipfs_api=$6 expose_ipfs=${7:-false}
-    local port_mappings='[{"containerPort": 8080, "protocol": "tcp"}]'
+    local port_mappings='[
+                {"containerPort": 8080, "protocol": "tcp"},
+                {"containerPort": 9000, "protocol": "tcp"}
+            ]'
 
     if [ "$expose_ipfs" = "true" ]; then
         port_mappings='[
                 {"containerPort": 8080, "protocol": "tcp"},
+                {"containerPort": 9000, "protocol": "tcp"},
                 {"containerPort": 4001, "protocol": "tcp"},
                 {"containerPort": 4001, "protocol": "udp"}
             ]'
@@ -260,6 +274,13 @@ _deploy_ecs() {
                 {\"name\": \"GOOGLE_APPLICATION_CREDENTIALS\", \"value\": \"/app/service-account.json\"},
                 {\"name\": \"IPFS_API_URL\", \"value\": \"$ipfs_api\"},
                 {\"name\": \"IPFS_GATEWAY_URL\", \"value\": \"https://ipfs.io/ipfs/\"},
+                {\"name\": \"IPNS_LIBRARY_NAME\", \"value\": \"knowledge-library-v2\"},
+                {\"name\": \"IPFS_AUTO_ANNOUNCE_PUBLIC_IP\", \"value\": \"$expose_ipfs\"},
+                {\"name\": \"IPNS_PUBLISH_REPETITIONS\", \"value\": \"1\"},
+                {\"name\": \"IPNS_PUBLISH_TIME_SEQUENCE\", \"value\": \"$expose_ipfs\"},
+                {\"name\": \"IPNS_PUBLISH_LIFETIME\", \"value\": \"17520h\"},
+                {\"name\": \"P2P_NODE_ID\", \"value\": \"${name#ian-}\"},
+                {\"name\": \"P2P_PORT\", \"value\": \"9000\"},
                 {\"name\": \"POLL_INTERVAL_SECONDS\", \"value\": \"10\"}
             ],
             \"logConfiguration\": {

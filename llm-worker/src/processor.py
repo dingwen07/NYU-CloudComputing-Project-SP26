@@ -12,6 +12,7 @@ from common import db
 from common.enums import JobStatus
 from common.ipfs import cat
 from common.models import AiMetadata
+from common import p2p
 
 from .prompts import SYSTEM_PROMPT, ANALYSIS_PROMPT
 
@@ -21,6 +22,7 @@ except ImportError:
     pypdf = None
 
 logger = logging.getLogger("llm-worker.processor")
+_tick_lock = asyncio.Lock()
 
 
 def _get_openai_client() -> AzureOpenAI:
@@ -35,10 +37,15 @@ async def poll_loop():
     """Main polling loop that picks up ASSIGNED jobs and processes them."""
     while True:
         try:
-            await _tick()
+            await run_tick()
         except Exception:
             logger.exception("Error in LLM worker poll tick")
         await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
+
+
+async def run_tick():
+    async with _tick_lock:
+        await _tick()
 
 
 async def _tick():
@@ -57,6 +64,7 @@ async def _tick():
             if not job.title and ai_metadata.suggested_title:
                 updates["title"] = ai_metadata.suggested_title
             db.update_job(job.id, updates)
+            p2p.publish("job.processed", job_id=job.id, cid=job.cid)
             logger.info(f"Job {job.id} processed successfully")
         except Exception:
             logger.exception(f"Failed to process job {job.id}")

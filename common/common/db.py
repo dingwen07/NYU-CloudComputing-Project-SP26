@@ -1,7 +1,7 @@
 """Firestore client wrapper for job and library state management."""
 
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from google.cloud import firestore
@@ -15,6 +15,7 @@ _client: Optional[firestore.Client] = None
 JOBS_COLLECTION = "jobs"
 LIBRARY_COLLECTION = "library"
 LIBRARY_STATE_DOC = "library/state"
+P2P_NODES_COLLECTION = "p2p_nodes"
 
 
 def get_db() -> firestore.Client:
@@ -144,3 +145,41 @@ def get_ipns_name(key_name: str) -> Optional[str]:
     if not doc.exists:
         return None
     return doc.to_dict().get("peer_id")
+
+
+# --- libp2p node discovery ---
+
+
+def register_p2p_node(node_id: str, peer_id: str, addrs: list[str]) -> None:
+    """Advertise a service node's libp2p addresses for peer discovery."""
+    db = get_db()
+    db.collection(P2P_NODES_COLLECTION).document(node_id).set(
+        {
+            "node_id": node_id,
+            "peer_id": peer_id,
+            "addrs": addrs,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    )
+
+
+def unregister_p2p_node(node_id: str) -> None:
+    """Remove a service node from libp2p peer discovery."""
+    db = get_db()
+    db.collection(P2P_NODES_COLLECTION).document(node_id).delete()
+
+
+def list_p2p_nodes() -> list[dict]:
+    """Return registered libp2p nodes."""
+    db = get_db()
+    nodes = []
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.P2P_NODE_TTL_SECONDS)
+    for doc in db.collection(P2P_NODES_COLLECTION).stream():
+        data = doc.to_dict()
+        updated_at = data.get("updated_at") if data else None
+        if updated_at and updated_at < cutoff:
+            continue
+        if data:
+            data["node_id"] = data.get("node_id") or doc.id
+            nodes.append(data)
+    return nodes

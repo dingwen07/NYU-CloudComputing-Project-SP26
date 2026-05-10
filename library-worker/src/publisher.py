@@ -9,19 +9,26 @@ from common import db
 from common.enums import JobStatus
 from common.ipfs import add_json, publish_ipns, resolve_ipns
 from common.models import LibraryEntry
+from common import p2p
 
 logger = logging.getLogger("library-worker.publisher")
 _index_repaired = False
+_tick_lock = asyncio.Lock()
 
 
 async def poll_loop():
     """Main polling loop that picks up APPROVED jobs and publishes them."""
     while True:
         try:
-            await _tick()
+            await run_tick()
         except Exception:
             logger.exception("Error in library worker poll tick")
         await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
+
+
+async def run_tick():
+    async with _tick_lock:
+        await _tick()
 
 
 async def _tick():
@@ -108,6 +115,7 @@ async def _tick():
                     "published_cid": metadata_cid,
                 },
             )
+            p2p.publish("job.published", job_id=job_id, metadata_cid=metadata_cid)
             logger.info(f"Job {job_id} published successfully")
 
 

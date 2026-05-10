@@ -7,21 +7,28 @@ from datetime import datetime, timezone, timedelta
 from common.config import settings
 from common import db
 from common.enums import JobStatus
+from common import p2p
 
 logger = logging.getLogger("orchestrator.worker")
 
 # Jobs older than this without being processed are cancelled (content unavailable)
 JOB_TIMEOUT = timedelta(minutes=30)
+_tick_lock = asyncio.Lock()
 
 
 async def poll_loop():
     """Main polling loop that drives job state transitions."""
     while True:
         try:
-            await _tick()
+            await run_tick()
         except Exception:
             logger.exception("Error in orchestrator poll tick")
         await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
+
+
+async def run_tick():
+    async with _tick_lock:
+        await _tick()
 
 
 async def _tick():
@@ -37,12 +44,14 @@ async def _tick():
 
         logger.info(f"Assigning job {job.id}")
         db.update_job(job.id, {"status": JobStatus.ASSIGNED.value})
+        p2p.publish("job.assigned", job_id=job.id, cid=job.cid)
 
     # 2. Move PROCESSED → PENDING_REVIEW (ready for human review)
     processed = db.list_jobs(status=JobStatus.PROCESSED)
     for job in processed:
         logger.info(f"Job {job.id} ready for review")
         db.update_job(job.id, {"status": JobStatus.PENDING_REVIEW.value})
+        p2p.publish("job.pending_review", job_id=job.id, cid=job.cid)
 
     # 3. Check for stale ASSIGNED/PROCESSING jobs (timeout handling)
     assigned = db.list_jobs(status=JobStatus.ASSIGNED)

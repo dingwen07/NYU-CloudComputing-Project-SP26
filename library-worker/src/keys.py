@@ -20,6 +20,15 @@ logger = logging.getLogger("library-worker.keys")
 KEY_NAME = settings.IPNS_LIBRARY_NAME  # default: "knowledge-library"
 
 
+def _ipfs_cmd(*args: str) -> list[str]:
+    """Build an IPFS CLI command, optionally targeting a remote Kubo API."""
+    cmd = ["ipfs"]
+    if settings.IPFS_CLI_API:
+        cmd.append(f"--api={settings.IPFS_CLI_API}")
+    cmd.extend(args)
+    return cmd
+
+
 async def ensure_ipns_key() -> str:
     """Ensure the IPNS key exists locally. Returns the IPNS name (peer ID).
 
@@ -59,7 +68,7 @@ async def ensure_ipns_key() -> str:
 def _list_local_keys() -> dict[str, str]:
     """List IPFS keys. Returns {name: peer_id}."""
     result = subprocess.run(
-        ["ipfs", "key", "list", "-l"],
+        _ipfs_cmd("key", "list", "-l"),
         capture_output=True, text=True, timeout=10,
     )
     keys = {}
@@ -74,7 +83,7 @@ def _list_local_keys() -> dict[str, str]:
 def _generate_key(name: str) -> str:
     """Generate a new IPFS key. Returns the peer ID."""
     result = subprocess.run(
-        ["ipfs", "key", "gen", name],
+        _ipfs_cmd("key", "gen", name),
         capture_output=True, text=True, timeout=10,
     )
     result.check_returncode()
@@ -88,7 +97,7 @@ def _export_key(name: str) -> bytes:
 
     try:
         result = subprocess.run(
-            ["ipfs", "key", "export", name, "-o", tmp_path],
+            _ipfs_cmd("key", "export", name, "-o", tmp_path),
             capture_output=True, text=True, timeout=10,
         )
         result.check_returncode()
@@ -105,7 +114,7 @@ def _import_key(name: str, key_bytes: bytes) -> str:
 
     try:
         result = subprocess.run(
-            ["ipfs", "key", "import", name, tmp_path],
+            _ipfs_cmd("key", "import", name, tmp_path),
             capture_output=True, text=True, timeout=10,
         )
         result.check_returncode()

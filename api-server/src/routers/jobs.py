@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from common import db
 from common.enums import JobStatus
 from common.models import Job
+from common import p2p
 
 router = APIRouter(tags=["jobs"])
 
@@ -59,6 +60,7 @@ async def submit_job(submission: JobSubmission):
         user_metadata=submission.user_metadata,
     )
     db.create_job(job)
+    p2p.publish("job.submitted", job_id=job.id, cid=job.cid)
     return _job_to_response(job)
 
 

@@ -1,5 +1,8 @@
 """IPFS client supporting both Kubo RPC API and public HTTP gateway."""
 
+import asyncio
+import time
+
 import httpx
 
 from .config import settings
@@ -46,25 +49,35 @@ async def cat(cid: str) -> bytes:
     Tries the Kubo RPC API first. If IPFS_API_URL is empty or the request
     fails, falls back to the public HTTP gateway.
     """
-    api = _api_url()
-    if api:
+    errors: list[str] = []
+
+    for attempt in range(3):
+        api = _api_url()
+        if api:
+            try:
+                async with httpx.AsyncClient(timeout=180) as client:
+                    resp = await client.post(
+                        f"{api}/cat",
+                        params={"arg": cid},
+                    )
+                    resp.raise_for_status()
+                    return resp.content
+            except httpx.HTTPError as exc:
+                errors.append(f"{api}/cat: {exc}")
+
+        gateway = _gateway_url()
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(
-                    f"{api}/cat",
-                    params={"arg": cid},
-                )
+            async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
+                resp = await client.get(f"{gateway}/{cid}")
                 resp.raise_for_status()
                 return resp.content
-        except (httpx.HTTPError, httpx.ConnectError):
-            pass  # Fall through to gateway
+        except httpx.HTTPError as exc:
+            errors.append(f"{gateway}/{cid}: {exc}")
 
-    # Fallback: public IPFS HTTP gateway
-    gateway = _gateway_url()
-    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
-        resp = await client.get(f"{gateway}/{cid}")
-        resp.raise_for_status()
-        return resp.content
+        if attempt < 2:
+            await asyncio.sleep(2 * (attempt + 1))
+
+    raise RuntimeError(f"Unable to fetch CID {cid} from IPFS: {'; '.join(errors)}")
 
 
 async def cat_json(cid: str) -> dict:
@@ -97,20 +110,27 @@ async def unpin(cid: str) -> None:
 
 async def publish_ipns(cid: str, *, key: str = "self") -> str:
     """Publish a CID to IPNS under the given key. Returns the IPNS name."""
+    name = ""
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(
-            f"{_api_url()}/name/publish",
-            params={
+        for _ in range(max(1, settings.IPNS_PUBLISH_REPETITIONS)):
+            params = {
                 "arg": f"/ipfs/{cid}",
                 "key": key,
                 "resolve": "true",
                 "allow-offline": "false",
-                "lifetime": "8760h",
+                "lifetime": settings.IPNS_PUBLISH_LIFETIME,
                 "ttl": "10s",
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()["Name"]
+            }
+            if settings.IPNS_PUBLISH_TIME_SEQUENCE:
+                params["sequence"] = str(time.time_ns())
+
+            resp = await client.post(
+                f"{_api_url()}/name/publish",
+                params=params,
+            )
+            resp.raise_for_status()
+            name = resp.json()["Name"]
+    return name
 
 
 async def resolve_ipns(name: str) -> str:
