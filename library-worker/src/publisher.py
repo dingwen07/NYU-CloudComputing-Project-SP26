@@ -12,7 +12,8 @@ from common.models import LibraryEntry
 from common import p2p
 
 logger = logging.getLogger("library-worker.publisher")
-_index_repaired = False
+_last_republish_utc: float = 0
+_REPUBLISH_INTERVAL_SECONDS = 4 * 3600  # re-announce IPNS every 4 hours
 _tick_lock = asyncio.Lock()
 
 
@@ -32,14 +33,15 @@ async def run_tick():
 
 
 async def _tick():
-    global _index_repaired
+    global _last_republish_utc
 
     approved = db.list_jobs(status=JobStatus.APPROVED)
 
     if not approved:
-        if not _index_repaired:
-            await _repair_published_index()
-            _index_repaired = True
+        now = datetime.now(timezone.utc).timestamp()
+        if now - _last_republish_utc >= _REPUBLISH_INTERVAL_SECONDS:
+            await _republish_existing_index()
+            _last_republish_utc = now
         return
 
     # Get current library state
@@ -119,8 +121,8 @@ async def _tick():
             logger.info(f"Job {job_id} published successfully")
 
 
-async def _repair_published_index():
-    """Re-pin the current Firestore library index after an ephemeral task restart."""
+async def _republish_existing_index():
+    """Re-publish the library index to IPNS so DHT records don't expire."""
     library = db.get_library_state()
     if not library.entries:
         return
@@ -128,9 +130,9 @@ async def _repair_published_index():
     try:
         await _publish_library_index_to_ipns(library)
         db.update_library_state(library)
-        logger.info("Re-published library index CID to IPNS: %s", library.index_cid)
+        logger.info("Republished library index to IPNS: %s", library.index_cid)
     except Exception:
-        logger.exception("Failed to re-publish existing library index")
+        logger.exception("Failed to republish library index to IPNS")
 
 
 async def _publish_library_index_to_ipns(library):
@@ -145,12 +147,16 @@ async def _publish_library_index_to_ipns(library):
     ipns_name = await publish_ipns(index_cid, key=settings.IPNS_LIBRARY_NAME)
     logger.info(f"IPNS updated: {ipns_name} -> {index_cid}")
 
-    resolved_cid = await resolve_ipns(ipns_name)
-    if resolved_cid != index_cid:
-        raise RuntimeError(
-            f"IPNS publish verification failed: {ipns_name} resolved to "
-            f"{resolved_cid}, expected {index_cid}"
-        )
+    try:
+        resolved_cid = await resolve_ipns(ipns_name)
+        if resolved_cid != index_cid:
+            logger.warning(
+                "IPNS resolve returned stale record: %s resolved to %s, expected %s "
+                "(DHT propagation may be slow)",
+                ipns_name, resolved_cid, index_cid,
+            )
+    except Exception:
+        logger.warning("IPNS resolve check failed (DHT may still be propagating)", exc_info=True)
 
     library.tag_index = payload["tag_index"]
     library.index_cid = index_cid

@@ -34,7 +34,7 @@ else
     ipfs config --json Swarm.ConnMgr.LowWater 50
     ipfs config --json Swarm.ConnMgr.HighWater 100
     ipfs config --json Swarm.ConnMgr.GracePeriod '"30s"'
-    ipfs config Reprovider.Interval "0"
+    ipfs config Reprovider.Interval "1h"
     ipfs config --json Swarm.DisableBandwidthMetrics true
 
     # Start IPFS daemon in background (read-only use)
